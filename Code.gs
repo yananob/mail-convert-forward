@@ -81,7 +81,7 @@ function processThread(thread, bloggerAddress) {
   });
 
   // スレッド全体を既読にする（念のため）
-  thread.markRead();
+  // thread.markRead();
 }
 
 /**
