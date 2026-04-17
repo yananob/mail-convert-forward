@@ -41,10 +41,10 @@ function main() {
  */
 function fetchTargetThreads(targetLabelName) {
   // ラベル名にスペースが含まれる場合を考慮し、ダブルクォーテーションで囲む
-  // 未読 (is:unread) のものを対象とする
-  const searchQuery = `label:"${targetLabelName}" is:unread`;
-  // 実行時間制限を考慮し、一度に処理する件数を制限（例: 20件）
-  return GmailApp.search(searchQuery, 0, 20);
+  // 未読 (is:unread) かつ 1日以内 (newer_than:1d) のものを対象とする
+  const searchQuery = `label:"${targetLabelName}" is:unread newer_than:1d`;
+  // 実行時間制限を考慮し、一度に処理する件数を制限（1件）
+  return GmailApp.search(searchQuery, 0, 1);
 }
 
 /**
