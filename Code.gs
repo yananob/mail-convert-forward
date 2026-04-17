@@ -13,20 +13,19 @@
 function main() {
   const properties = PropertiesService.getScriptProperties().getProperties();
   const targetLabelName = properties.TARGET_LABEL;
-  const processedLabelName = properties.PROCESSED_LABEL;
   const bloggerAddress = properties.BLOGGER_ADDRESS;
 
-  if (!targetLabelName || !processedLabelName || !bloggerAddress) {
-    console.error('スクリプトプロパティが設定されていません。TARGET_LABEL, PROCESSED_LABEL, BLOGGER_ADDRESS を確認してください。');
+  if (!targetLabelName || !bloggerAddress) {
+    console.error('スクリプトプロパティが設定されていません。TARGET_LABEL, BLOGGER_ADDRESS を確認してください。');
     return;
   }
 
-  const threads = fetchTargetThreads(targetLabelName, processedLabelName);
+  const threads = fetchTargetThreads(targetLabelName);
   console.log(`${threads.length} 件のスレッドが見つかりました。`);
 
   threads.forEach(thread => {
     try {
-      processThread(thread, bloggerAddress, targetLabelName, processedLabelName);
+      processThread(thread, bloggerAddress);
     } catch (e) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}): ${e.message}`);
     }
@@ -35,14 +34,15 @@ function main() {
 
 /**
  * 処理対象のスレッドを取得します。
+ * 未読かつ指定ラベルがついたスレッドを取得します。
  *
  * @param {string} targetLabelName 転送対象のラベル名
- * @param {string} processedLabelName 処理済みラベル名
  * @returns {GoogleAppsScript.Gmail.GmailThread[]} 取得したスレッドの配列
  */
-function fetchTargetThreads(targetLabelName, processedLabelName) {
+function fetchTargetThreads(targetLabelName) {
   // ラベル名にスペースが含まれる場合を考慮し、ダブルクォーテーションで囲む
-  const searchQuery = `label:"${targetLabelName}" -label:"${processedLabelName}"`;
+  // 未読 (is:unread) のものを対象とする
+  const searchQuery = `label:"${targetLabelName}" is:unread`;
   // 実行時間制限を考慮し、一度に処理する件数を制限（例: 20件）
   return GmailApp.search(searchQuery, 0, 20);
 }
@@ -52,15 +52,16 @@ function fetchTargetThreads(targetLabelName, processedLabelName) {
  *
  * @param {GoogleAppsScript.Gmail.GmailThread} thread 処理対象のスレッド
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
- * @param {string} targetLabelName 転送対象のラベル名
- * @param {string} processedLabelName 処理済みラベル名
  */
-function processThread(thread, bloggerAddress, targetLabelName, processedLabelName) {
+function processThread(thread, bloggerAddress) {
   const messages = thread.getMessages();
-  const targetLabel = GmailApp.getUserLabelByName(targetLabelName);
-  const processedLabel = GmailApp.getUserLabelByName(processedLabelName) || GmailApp.createLabel(processedLabelName);
 
   messages.forEach(message => {
+    // 未読メッセージのみ処理
+    if (!message.isUnread()) {
+      return;
+    }
+
     const subject = message.getSubject();
     let htmlBody = '';
 
@@ -74,11 +75,13 @@ function processThread(thread, bloggerAddress, targetLabelName, processedLabelNa
     }
 
     transferToBlogger(subject, htmlBody, bloggerAddress);
+
+    // メッセージを既読にする
+    message.markRead();
   });
 
-  // ラベルの後処理
-  thread.addLabel(processedLabel);
-  thread.removeLabel(targetLabel);
+  // スレッド全体を既読にする（念のため）
+  thread.markRead();
 }
 
 /**
