@@ -63,13 +63,16 @@ function processThread(thread, bloggerAddress) {
     }
 
     const subject = message.getSubject();
+    console.log('メッセージを処理中: ' + subject);
     let htmlBody = '';
 
     if (message.getBody() !== message.getPlainBody()) {
       // すでにHTML形式の場合はそのまま使用
+      console.log('HTML形式の本文をそのまま使用します。');
       htmlBody = message.getBody();
     } else {
       // テキスト形式の場合はHTMLに変換
+      console.log('プレーンテキスト形式の本文をHTMLに変換します。');
       const plainText = message.getPlainBody();
       htmlBody = convertTextToHtml(plainText);
     }
@@ -78,6 +81,7 @@ function processThread(thread, bloggerAddress) {
 
     // メッセージを既読にする
     message.markRead();
+    console.log('処理完了: メッセージを既読にしました。');
   });
 
   // スレッド全体を既読にする（念のため）
@@ -119,6 +123,7 @@ function convertTextToHtml(plainText) {
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
  */
 function transferToBlogger(subject, htmlBody, bloggerAddress) {
+  console.log('Bloggerへ転送中: ' + subject + ' (宛先: ' + bloggerAddress + ')');
   GmailApp.sendEmail(bloggerAddress, subject, '', {
     htmlBody: htmlBody
   });
