@@ -7,27 +7,68 @@
  */
 
 /**
+ * メルマガ転送設定
+ * days: 実行する曜日 (0:日曜, 1:月曜, ..., 6:土曜)。nullの場合は毎日実行。
+ * convertHtml: テキストをHTMLに変換して転送するかどうか。
+ */
+const MAIL_MAGS_CONFIG = [
+  { label: "mailmag-NikkeiBP", days: [1], convertHtml: false },
+  { label: "mailmag-DOL", days: [5], convertHtml: false },
+  { label: "mailmag-CodeZine", days: [4], convertHtml: true },
+  { label: "mailmag-Markezine", days: [4], convertHtml: false }
+];
+
+/**
  * メインのエントリーポイント。
  * トリガーによって定期実行されることを想定しています。
  */
 function main() {
   const properties = PropertiesService.getScriptProperties().getProperties();
-  const targetLabelName = properties.TARGET_LABEL;
   const bloggerAddress = properties.BLOGGER_ADDRESS;
 
-  if (!targetLabelName || !bloggerAddress) {
-    console.error('スクリプトプロパティが設定されていません。TARGET_LABEL, BLOGGER_ADDRESS を確認してください。');
+  if (!bloggerAddress) {
+    console.error('スクリプトプロパティが設定されていません。BLOGGER_ADDRESS を確認してください。');
     return;
   }
 
-  const threads = fetchTargetThreads(targetLabelName);
-  console.log(`${threads.length} 件のスレッドが見つかりました。`);
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+
+  // 1. プロパティで指定されたレガシーなラベルの処理
+  const legacyLabel = properties.TARGET_LABEL;
+  if (legacyLabel) {
+    console.log(`レガシーラベルを処理中: ${legacyLabel}`);
+    processLabel(legacyLabel, true, bloggerAddress);
+  }
+
+  // 2. MAIL_MAGS_CONFIG に基づく処理
+  MAIL_MAGS_CONFIG.forEach(config => {
+    // 曜日のチェック
+    if (!config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1) {
+      console.log(`設定済みラベルを処理中: ${config.label}`);
+      processLabel(config.label, config.convertHtml, bloggerAddress);
+    } else {
+      console.log(`スキップ: ${config.label} (今日の曜日 ${dayOfWeek} は対象外)`);
+    }
+  });
+}
+
+/**
+ * 指定したラベルのメールをフェッチして処理します。
+ *
+ * @param {string} labelName 処理対象のラベル名
+ * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
+ * @param {string} bloggerAddress 転送先アドレス
+ */
+function processLabel(labelName, shouldConvertHtml, bloggerAddress) {
+  const threads = fetchTargetThreads(labelName);
+  console.log(`ラベル "${labelName}": ${threads.length} 件のスレッドが見つかりました。`);
 
   threads.forEach(thread => {
     try {
-      processThread(thread, bloggerAddress);
+      processThread(thread, bloggerAddress, shouldConvertHtml);
     } catch (e) {
-      console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}): ${e.message}`);
+      console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
     }
   });
 }
@@ -41,8 +82,10 @@ function main() {
  */
 function fetchTargetThreads(targetLabelName) {
   // ラベル名にスペースが含まれる場合を考慮し、ダブルクォーテーションで囲む
-  // 未読 (is:unread) かつ 1日以内 (newer_than:1d) のものを対象とする
-  const searchQuery = `label:"${targetLabelName}" is:unread newer_than:1d`;
+  // 未読 (is:unread) かつ 6時間以内 (after:<timestamp>) のものを対象とする
+  const sixHoursAgo = Math.floor((Date.now() - 6 * 60 * 60 * 1000) / 1000);
+  const searchQuery = `label:"${targetLabelName}" is:unread after:${sixHoursAgo}`;
+  console.log(`検索クエリ: ${searchQuery}`);
   // 実行時間制限を考慮し、一度に処理する件数を制限（1件）
   return GmailApp.search(searchQuery, 0, 1);
 }
@@ -52,8 +95,9 @@ function fetchTargetThreads(targetLabelName) {
  *
  * @param {GoogleAppsScript.Gmail.GmailThread} thread 処理対象のスレッド
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
+ * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  */
-function processThread(thread, bloggerAddress) {
+function processThread(thread, bloggerAddress, shouldConvertHtml) {
   const messages = thread.getMessages();
 
   messages.forEach(message => {
@@ -64,20 +108,25 @@ function processThread(thread, bloggerAddress) {
 
     const subject = message.getSubject();
     console.log('メッセージを処理中: ' + subject);
-    let htmlBody = '';
 
-    if (message.getBody() !== message.getPlainBody()) {
-      // すでにHTML形式の場合はそのまま使用
-      console.log('HTML形式の本文をそのまま使用します。');
-      htmlBody = message.getBody();
+    if (shouldConvertHtml) {
+      let htmlBody = '';
+      if (message.getBody() !== message.getPlainBody()) {
+        // すでにHTML形式の場合はそのまま使用
+        console.log('HTML形式の本文をそのまま使用します。');
+        htmlBody = message.getBody();
+      } else {
+        // テキスト形式の場合はHTMLに変換
+        console.log('プレーンテキスト形式の本文をHTMLに変換します。');
+        const plainText = message.getPlainBody();
+        htmlBody = convertTextToHtml(plainText);
+      }
+      transferToBlogger(subject, htmlBody, bloggerAddress);
     } else {
-      // テキスト形式の場合はHTMLに変換
-      console.log('プレーンテキスト形式の本文をHTMLに変換します。');
-      const plainText = message.getPlainBody();
-      htmlBody = convertTextToHtml(plainText);
+      // そのまま転送
+      console.log('メッセージをそのまま転送します。');
+      message.forward(bloggerAddress);
     }
-
-    transferToBlogger(subject, htmlBody, bloggerAddress);
 
     // メッセージを既読にする
     message.markRead();
