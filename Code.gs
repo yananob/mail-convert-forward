@@ -12,6 +12,7 @@
  * convertHtml: テキストをHTMLに変換して転送するかどうか。
  */
 const MAIL_MAGS_CONFIG = [
+  { label: "mailmag", days: null, convertHtml: true },
   { label: "mailmag-NikkeiBP", days: [1], convertHtml: false },
   { label: "mailmag-DOL", days: [5], convertHtml: false },
   { label: "mailmag-CodeZine", days: [4], convertHtml: true },
@@ -25,10 +26,15 @@ const MAIL_MAGS_CONFIG = [
 function main() {
   const properties = PropertiesService.getScriptProperties().getProperties();
   const bloggerAddress = properties.BLOGGER_ADDRESS;
+  const isDryRun = properties.DRY_RUN === 'true';
 
   if (!bloggerAddress) {
     console.error('スクリプトプロパティが設定されていません。BLOGGER_ADDRESS を確認してください。');
     return;
+  }
+
+  if (isDryRun) {
+    console.log('--- DRY RUN モードで実行中 (転送・既読化は行われません) ---');
   }
 
   const today = new Date();
@@ -38,7 +44,7 @@ function main() {
   const legacyLabel = properties.TARGET_LABEL;
   if (legacyLabel) {
     console.log(`レガシーラベルを処理中: ${legacyLabel}`);
-    processLabel(legacyLabel, true, bloggerAddress);
+    processLabel(legacyLabel, true, bloggerAddress, isDryRun);
   }
 
   // 2. MAIL_MAGS_CONFIG に基づく処理
@@ -46,7 +52,7 @@ function main() {
     // 曜日のチェック
     if (!config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1) {
       console.log(`設定済みラベルを処理中: ${config.label}`);
-      processLabel(config.label, config.convertHtml, bloggerAddress);
+      processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun);
     } else {
       console.log(`スキップ: ${config.label} (今日の曜日 ${dayOfWeek} は対象外)`);
     }
@@ -59,14 +65,15 @@ function main() {
  * @param {string} labelName 処理対象のラベル名
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {string} bloggerAddress 転送先アドレス
+ * @param {boolean} isDryRun Dry Runモードかどうか
  */
-function processLabel(labelName, shouldConvertHtml, bloggerAddress) {
+function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
   const threads = fetchTargetThreads(labelName);
   console.log(`ラベル "${labelName}": ${threads.length} 件のスレッドが見つかりました。`);
 
   threads.forEach(thread => {
     try {
-      processThread(thread, bloggerAddress, shouldConvertHtml);
+      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun);
     } catch (e) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
     }
@@ -96,8 +103,9 @@ function fetchTargetThreads(targetLabelName) {
  * @param {GoogleAppsScript.Gmail.GmailThread} thread 処理対象のスレッド
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
+ * @param {boolean} isDryRun Dry Runモードかどうか
  */
-function processThread(thread, bloggerAddress, shouldConvertHtml) {
+function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
   const messages = thread.getMessages();
 
   messages.forEach(message => {
@@ -121,16 +129,29 @@ function processThread(thread, bloggerAddress, shouldConvertHtml) {
         const plainText = message.getPlainBody();
         htmlBody = convertTextToHtml(plainText);
       }
-      transferToBlogger(subject, htmlBody, bloggerAddress);
+
+      if (isDryRun) {
+        console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
+      } else {
+        transferToBlogger(subject, htmlBody, bloggerAddress);
+      }
     } else {
       // そのまま転送
-      console.log('メッセージをそのまま転送します。');
-      message.forward(bloggerAddress);
+      if (isDryRun) {
+        console.log('[DRY RUN] メッセージを転送しません: ' + subject);
+      } else {
+        console.log('メッセージをそのまま転送します。');
+        message.forward(bloggerAddress);
+      }
     }
 
     // メッセージを既読にする
-    message.markRead();
-    console.log('処理完了: メッセージを既読にしました。');
+    if (isDryRun) {
+      console.log('[DRY RUN] メッセージを既読にしません: ' + subject);
+    } else {
+      message.markRead();
+      console.log('処理完了: メッセージを既読にしました。');
+    }
   });
 
   // スレッド全体を既読にする（念のため）
