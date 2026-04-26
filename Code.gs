@@ -40,14 +40,7 @@ function main() {
   const today = new Date();
   const dayOfWeek = today.getDay();
 
-  // 1. プロパティで指定されたレガシーなラベルの処理
-  const legacyLabel = properties.TARGET_LABEL;
-  if (legacyLabel) {
-    console.log(`レガシーラベルを処理中: ${legacyLabel}`);
-    processLabel(legacyLabel, true, bloggerAddress, isDryRun);
-  }
-
-  // 2. MAIL_MAGS_CONFIG に基づく処理
+  // MAIL_MAGS_CONFIG に基づく処理
   MAIL_MAGS_CONFIG.forEach(config => {
     // 曜日のチェック
     if (!config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1) {
