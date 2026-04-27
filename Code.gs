@@ -43,12 +43,9 @@ function main() {
   // MAIL_MAGS_CONFIG に基づく処理
   MAIL_MAGS_CONFIG.forEach(config => {
     // 曜日のチェック
-    if (!config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1) {
-      console.log(`設定済みラベルを処理中: ${config.label}`);
-      processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun);
-    } else {
-      console.log(`スキップ: ${config.label} (今日の曜日 ${dayOfWeek} は対象外)`);
-    }
+    const isTargetDay = !config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1;
+    console.log(`設定済みラベルを処理中: ${config.label} (転送対象日: ${isTargetDay})`);
+    processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun, isTargetDay);
   });
 }
 
@@ -59,14 +56,15 @@ function main() {
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {string} bloggerAddress 転送先アドレス
  * @param {boolean} isDryRun Dry Runモードかどうか
+ * @param {boolean} isTargetDay 転送対象の曜日かどうか
  */
-function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
+function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, isTargetDay) {
   const threads = fetchTargetThreads(labelName);
   console.log(`ラベル "${labelName}": ${threads.length} 件のスレッドが見つかりました。`);
 
   threads.forEach(thread => {
     try {
-      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun);
+      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTargetDay);
     } catch (e) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
     }
@@ -97,8 +95,9 @@ function fetchTargetThreads(targetLabelName) {
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {boolean} isDryRun Dry Runモードかどうか
+ * @param {boolean} isTargetDay 転送対象の曜日かどうか
  */
-function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
+function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTargetDay) {
   const messages = thread.getMessages();
 
   messages.forEach(message => {
@@ -110,32 +109,36 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
     const subject = message.getSubject();
     console.log('メッセージを処理中: ' + subject);
 
-    if (shouldConvertHtml) {
-      let htmlBody = '';
-      if (message.getBody() !== message.getPlainBody()) {
-        // すでにHTML形式の場合はそのまま使用
-        console.log('HTML形式の本文をそのまま使用します。');
-        htmlBody = message.getBody();
-      } else {
-        // テキスト形式の場合はHTMLに変換
-        console.log('プレーンテキスト形式の本文をHTMLに変換します。');
-        const plainText = message.getPlainBody();
-        htmlBody = convertTextToHtml(plainText);
-      }
+    if (isTargetDay) {
+      if (shouldConvertHtml) {
+        let htmlBody = '';
+        if (message.getBody() !== message.getPlainBody()) {
+          // すでにHTML形式の場合はそのまま使用
+          console.log('HTML形式の本文をそのまま使用します。');
+          htmlBody = message.getBody();
+        } else {
+          // テキスト形式の場合はHTMLに変換
+          console.log('プレーンテキスト形式の本文をHTMLに変換します。');
+          const plainText = message.getPlainBody();
+          htmlBody = convertTextToHtml(plainText);
+        }
 
-      if (isDryRun) {
-        console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
+        if (isDryRun) {
+          console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
+        } else {
+          transferToBlogger(subject, htmlBody, bloggerAddress);
+        }
       } else {
-        transferToBlogger(subject, htmlBody, bloggerAddress);
+        // そのまま転送
+        if (isDryRun) {
+          console.log('[DRY RUN] メッセージを転送しません: ' + subject);
+        } else {
+          console.log('メッセージをそのまま転送します。');
+          message.forward(bloggerAddress);
+        }
       }
     } else {
-      // そのまま転送
-      if (isDryRun) {
-        console.log('[DRY RUN] メッセージを転送しません: ' + subject);
-      } else {
-        console.log('メッセージをそのまま転送します。');
-        message.forward(bloggerAddress);
-      }
+      console.log('スキップ: 転送対象の曜日ではないため、転送をスキップします。');
     }
 
     // メッセージを既読にする
