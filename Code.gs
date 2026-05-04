@@ -62,13 +62,34 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, is
   const threads = fetchTargetThreads(labelName);
   console.log(`ラベル "${labelName}": ${threads.length} 件のスレッドが見つかりました。`);
 
-  threads.forEach(thread => {
+  let processedCount = 0;
+  for (const thread of threads) {
+    if (processedCount >= 1) {
+      break;
+    }
+
+    // 子ラベルを持っているかチェック
+    // Gmailの階層ラベルは "親/子" 形式。
+    // また、ユーザーの設定で "mailmag-NikkeiBP" のような形式も子として扱う可能性があるため
+    // スラッシュまたはハイフンが続く場合に子ラベルと判定する
+    const labels = thread.getLabels();
+    const hasSubLabel = labels.some(l => {
+      const name = l.getName();
+      return name.startsWith(labelName + '/') || name.startsWith(labelName + '-');
+    });
+
+    if (hasSubLabel) {
+      console.log(`スレッド (ID: ${thread.getId()}) は子ラベルを持っているため、親ラベル "${labelName}" の処理としてはスキップします。`);
+      continue;
+    }
+
     try {
       processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTargetDay);
+      processedCount++;
     } catch (e) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
     }
-  });
+  }
 }
 
 /**
@@ -84,8 +105,9 @@ function fetchTargetThreads(targetLabelName) {
   const sixHoursAgo = Math.floor((Date.now() - 6 * 60 * 60 * 1000) / 1000);
   const searchQuery = `label:"${targetLabelName}" is:unread after:${sixHoursAgo}`;
   console.log(`検索クエリ: ${searchQuery}`);
-  // 実行時間制限を考慮し、一度に処理する件数を制限（1件）
-  return GmailApp.search(searchQuery, 0, 1);
+  // 実行時間制限を考慮し、一度に処理する件数を制限（10件）
+  // 後のフィルタリング処理で子ラベルが付いているスレッドを除外するため、少し多めに取得します
+  return GmailApp.search(searchQuery, 0, 10);
 }
 
 /**
