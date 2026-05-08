@@ -9,14 +9,15 @@
 /**
  * メルマガ転送設定
  * days: 実行する曜日 (0:日曜, 1:月曜, ..., 6:土曜)。nullの場合は毎日実行。
+ * hours: 実行する時間 (0-23)。nullの場合は毎時実行。数値、配列、またはカンマ区切りの文字列で指定可能。
  * convertHtml: テキストをHTMLに変換して転送するかどうか。
  */
 const MAIL_MAGS_CONFIG = [
-  { label: "mailmag", days: null, convertHtml: true },
-  { label: "mailmag-NikkeiBP", days: [1], convertHtml: false },
-  { label: "mailmag-DOL", days: [5], convertHtml: false },
-  { label: "mailmag-CodeZine", days: [4], convertHtml: true },
-  { label: "mailmag-Markezine", days: [4], convertHtml: false }
+  { label: "mailmag", days: null, hours: null, convertHtml: true },
+  { label: "mailmag-NikkeiBP", days: [1], hours: null, convertHtml: false },
+  { label: "mailmag-DOL", days: [5], hours: null, convertHtml: false },
+  { label: "mailmag-CodeZine", days: [4], hours: null, convertHtml: true },
+  { label: "mailmag-Markezine", days: [4], hours: null, convertHtml: false }
 ];
 
 /**
@@ -39,13 +40,19 @@ function main() {
 
   const today = new Date();
   const dayOfWeek = today.getDay();
+  const currentHour = today.getHours();
 
   // MAIL_MAGS_CONFIG に基づく処理
   MAIL_MAGS_CONFIG.forEach(config => {
     // 曜日のチェック
     const isTargetDay = !config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1;
-    console.log(`設定済みラベルを処理中: ${config.label} (転送対象日: ${isTargetDay})`);
-    processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun, isTargetDay);
+    // 時間のチェック
+    const isTargetHour = isTargetTime(config.hours, currentHour);
+
+    const shouldForward = isTargetDay && isTargetHour;
+
+    console.log(`設定済みラベルを処理中: ${config.label} (転送対象: ${shouldForward}, 曜日対象: ${isTargetDay}, 時間対象: ${isTargetHour})`);
+    processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun, shouldForward);
   });
 }
 
@@ -56,9 +63,9 @@ function main() {
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {string} bloggerAddress 転送先アドレス
  * @param {boolean} isDryRun Dry Runモードかどうか
- * @param {boolean} isTargetDay 転送対象の曜日かどうか
+ * @param {boolean} shouldForward 転送対象かどうか
  */
-function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, isTargetDay) {
+function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, shouldForward) {
   const threads = fetchTargetThreads(labelName);
   console.log(`ラベル "${labelName}": ${threads.length} 件のスレッドが見つかりました。`);
 
@@ -84,7 +91,7 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, is
     }
 
     try {
-      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTargetDay);
+      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, shouldForward);
       processedCount++;
     } catch (e) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
@@ -117,9 +124,9 @@ function fetchTargetThreads(targetLabelName) {
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {boolean} isDryRun Dry Runモードかどうか
- * @param {boolean} isTargetDay 転送対象の曜日かどうか
+ * @param {boolean} shouldForward 転送対象かどうか
  */
-function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTargetDay) {
+function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, shouldForward) {
   const messages = thread.getMessages();
 
   messages.forEach(message => {
@@ -131,7 +138,7 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTa
     const subject = message.getSubject();
     console.log('メッセージを処理中: ' + subject);
 
-    if (isTargetDay) {
+    if (shouldForward) {
       if (shouldConvertHtml) {
         let htmlBody = '';
         if (message.getBody() !== message.getPlainBody()) {
@@ -160,7 +167,7 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, isTa
         }
       }
     } else {
-      console.log('スキップ: 転送対象の曜日ではないため、転送をスキップします。');
+      console.log('スキップ: 転送対象の時間外または曜日外のため、転送をスキップします。');
     }
 
     // メッセージを既読にする
@@ -215,4 +222,32 @@ function transferToBlogger(subject, htmlBody, bloggerAddress) {
   GmailApp.sendEmail(bloggerAddress, subject, '', {
     htmlBody: htmlBody
   });
+}
+
+/**
+ * 指定した時間が実行対象の時間かどうかを判定します。
+ *
+ * @param {number|number[]|string|null} configHours 設定された時間
+ * @param {number} currentHour 現在の時間
+ * @returns {boolean} 実行対象の時間であれば true
+ */
+function isTargetTime(configHours, currentHour) {
+  if (configHours === null || configHours === undefined || configHours === '') {
+    return true;
+  }
+
+  if (typeof configHours === 'number') {
+    return configHours === currentHour;
+  }
+
+  if (Array.isArray(configHours)) {
+    return configHours.indexOf(currentHour) !== -1;
+  }
+
+  if (typeof configHours === 'string') {
+    const hours = configHours.split(',').map(h => parseInt(h.trim(), 10));
+    return hours.indexOf(currentHour) !== -1;
+  }
+
+  return false;
 }
