@@ -14,10 +14,9 @@
  */
 const MAIL_MAGS_CONFIG = [
   { label: "mailmag", days: null, hours: null, convertHtml: true },
-  { label: "mailmag-NikkeiBP", days: [1], hours: null, convertHtml: false },
-  { label: "mailmag-DOL", days: [5], hours: null, convertHtml: false },
-  { label: "mailmag-CodeZine", days: [4], hours: null, convertHtml: true },
-  { label: "mailmag-Markezine", days: [4], hours: null, convertHtml: false }
+  { label: "mailmag-NikkeiBP", days: [1], hours: 11, convertHtml: false },
+  { label: "mailmag-DOL", days: [5], hours: 11, convertHtml: false },
+  { label: "mailmag-CodeZine", days: [4], hours: 11, convertHtml: true },
 ];
 
 /**
