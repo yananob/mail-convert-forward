@@ -107,10 +107,9 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
  */
 function fetchTargetThreads(targetLabelName) {
   // ラベル名にスペースが含まれる場合を考慮し、ダブルクォーテーションで囲む
-  // 未読 (is:unread) かつ 7日以内 (after:<timestamp>) のものを対象とする
-  // 実行曜日が限られている場合に備え、検索範囲を広げています
-  const sevenDaysAgo = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
-  const searchQuery = `label:"${targetLabelName}" is:unread after:${sevenDaysAgo}`;
+  // 未読 (is:unread) かつ 1日以内 (after:<timestamp>) のものを対象とする
+  const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+  const searchQuery = `label:"${targetLabelName}" is:unread after:${oneDayAgo}`;
   console.log(`検索クエリ: ${searchQuery}`);
   // 実行時間制限を考慮し、一度に処理する件数を制限（10件）
   // 後のフィルタリング処理で子ラベルが付いているスレッドを除外するため、少し多めに取得します
