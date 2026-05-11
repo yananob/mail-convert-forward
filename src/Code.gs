@@ -8,15 +8,15 @@
 
 /**
  * メルマガ転送設定
- * days: 実行する曜日 (0:日曜, 1:月曜, ..., 6:土曜)。nullの場合は毎日実行。
- * hours: 実行する時間 (0-23)。nullの場合は毎時実行。数値、配列、またはカンマ区切りの文字列で指定可能。
+ * days: 実行する曜日 (0:日曜, 1:月曜, ..., 6:土曜)。[]の場合は毎日実行。
+ * hours: 実行する時間 (0-23)。[]の場合は毎時実行。
  * convertHtml: テキストをHTMLに変換して転送するかどうか。
  */
 const MAIL_MAGS_CONFIG = [
-  { label: "mailmag", days: null, hours: null, convertHtml: true },
-  { label: "mailmag-NikkeiBP", days: [1], hours: 11, convertHtml: false },
-  { label: "mailmag-DOL", days: [5], hours: 11, convertHtml: false },
-  { label: "mailmag-CodeZine", days: [4], hours: 11, convertHtml: true },
+  { label: "mailmag", days: [], hours: [], convertHtml: true },
+  { label: "mailmag-NikkeiBP", days: [1], hours: [11], convertHtml: false },
+  { label: "mailmag-DOL", days: [5], hours: [11], convertHtml: false },
+  { label: "mailmag-CodeZine", days: [4], hours: [11], convertHtml: true },
 ];
 
 /**
@@ -43,15 +43,16 @@ function main() {
 
   // MAIL_MAGS_CONFIG に基づく処理
   MAIL_MAGS_CONFIG.forEach(config => {
-    // 曜日のチェック
-    const isTargetDay = !config.days || config.days.length === 0 || config.days.indexOf(dayOfWeek) !== -1;
-    // 時間のチェック
-    const isTargetHour = isTargetTime(config.hours, currentHour);
+    // 曜日と時間のチェック
+    const isTargetDay = isConfigMatch(config.days, dayOfWeek);
+    const isTargetHour = isConfigMatch(config.hours, currentHour);
 
-    const shouldForward = isTargetDay && isTargetHour;
-
-    console.log(`設定済みラベルを処理中: ${config.label} (転送対象: ${shouldForward}, 曜日対象: ${isTargetDay}, 時間対象: ${isTargetHour})`);
-    processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun, shouldForward);
+    if (isTargetDay && isTargetHour) {
+      console.log(`設定済みラベルを処理中: ${config.label} (曜日対象: ${isTargetDay}, 時間対象: ${isTargetHour})`);
+      processLabel(config.label, config.convertHtml, bloggerAddress, isDryRun);
+    } else {
+      console.log(`スキップ: ${config.label} は現在の実行対象時間外です (曜日対象: ${isTargetDay}, 時間対象: ${isTargetHour})`);
+    }
   });
 }
 
@@ -62,9 +63,8 @@ function main() {
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {string} bloggerAddress 転送先アドレス
  * @param {boolean} isDryRun Dry Runモードかどうか
- * @param {boolean} shouldForward 転送対象かどうか
  */
-function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, shouldForward) {
+function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
   const threads = fetchTargetThreads(labelName);
   console.log(`ラベル "${labelName}": ${threads.length} 件のスレッドが見つかりました。`);
 
@@ -90,7 +90,7 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, sh
     }
 
     try {
-      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, shouldForward);
+      processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun);
       processedCount++;
     } catch (e) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
@@ -107,9 +107,9 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun, sh
  */
 function fetchTargetThreads(targetLabelName) {
   // ラベル名にスペースが含まれる場合を考慮し、ダブルクォーテーションで囲む
-  // 未読 (is:unread) かつ 6時間以内 (after:<timestamp>) のものを対象とする
-  const sixHoursAgo = Math.floor((Date.now() - 6 * 60 * 60 * 1000) / 1000);
-  const searchQuery = `label:"${targetLabelName}" is:unread after:${sixHoursAgo}`;
+  // 未読 (is:unread) かつ 1日以内 (after:<timestamp>) のものを対象とする
+  const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+  const searchQuery = `label:"${targetLabelName}" is:unread after:${oneDayAgo}`;
   console.log(`検索クエリ: ${searchQuery}`);
   // 実行時間制限を考慮し、一度に処理する件数を制限（10件）
   // 後のフィルタリング処理で子ラベルが付いているスレッドを除外するため、少し多めに取得します
@@ -123,9 +123,8 @@ function fetchTargetThreads(targetLabelName) {
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
  * @param {boolean} shouldConvertHtml HTML変換を行うかどうか
  * @param {boolean} isDryRun Dry Runモードかどうか
- * @param {boolean} shouldForward 転送対象かどうか
  */
-function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, shouldForward) {
+function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
   const messages = thread.getMessages();
 
   messages.forEach(message => {
@@ -137,36 +136,32 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, shou
     const subject = message.getSubject();
     console.log('メッセージを処理中: ' + subject);
 
-    if (shouldForward) {
-      if (shouldConvertHtml) {
-        let htmlBody = '';
-        if (message.getBody() !== message.getPlainBody()) {
-          // すでにHTML形式の場合はそのまま使用
-          console.log('HTML形式の本文をそのまま使用します。');
-          htmlBody = message.getBody();
-        } else {
-          // テキスト形式の場合はHTMLに変換
-          console.log('プレーンテキスト形式の本文をHTMLに変換します。');
-          const plainText = message.getPlainBody();
-          htmlBody = convertTextToHtml(plainText);
-        }
-
-        if (isDryRun) {
-          console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
-        } else {
-          transferToBlogger(subject, htmlBody, bloggerAddress);
-        }
+    if (shouldConvertHtml) {
+      let htmlBody = '';
+      if (message.getBody() !== message.getPlainBody()) {
+        // すでにHTML形式の場合はそのまま使用
+        console.log('HTML形式の本文をそのまま使用します。');
+        htmlBody = message.getBody();
       } else {
-        // そのまま転送
-        if (isDryRun) {
-          console.log('[DRY RUN] メッセージを転送しません: ' + subject);
-        } else {
-          console.log('メッセージをそのまま転送します。');
-          message.forward(bloggerAddress);
-        }
+        // テキスト形式の場合はHTMLに変換
+        console.log('プレーンテキスト形式の本文をHTMLに変換します。');
+        const plainText = message.getPlainBody();
+        htmlBody = convertTextToHtml(plainText);
+      }
+
+      if (isDryRun) {
+        console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
+      } else {
+        transferToBlogger(subject, htmlBody, bloggerAddress);
       }
     } else {
-      console.log('スキップ: 転送対象の時間外または曜日外のため、転送をスキップします。');
+      // そのまま転送
+      if (isDryRun) {
+        console.log('[DRY RUN] メッセージを転送しません: ' + subject);
+      } else {
+        console.log('メッセージをそのまま転送します。');
+        message.forward(bloggerAddress);
+      }
     }
 
     // メッセージを既読にする
@@ -177,9 +172,6 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun, shou
       console.log('処理完了: メッセージを既読にしました。');
     }
   });
-
-  // スレッド全体を既読にする（念のため）
-  // thread.markRead();
 }
 
 /**
@@ -224,28 +216,19 @@ function transferToBlogger(subject, htmlBody, bloggerAddress) {
 }
 
 /**
- * 指定した時間が実行対象の時間かどうかを判定します。
+ * 指定した値（曜日または時間）が実行対象かどうかを判定します。
  *
- * @param {number|number[]|string|null} configHours 設定された時間
- * @param {number} currentHour 現在の時間
- * @returns {boolean} 実行対象の時間であれば true
+ * @param {number[]|null} configValues 設定された値の配列。空配列またはnullの場合は全て対象。
+ * @param {number} currentValue 現在の値
+ * @returns {boolean} 実行対象であれば true
  */
-function isTargetTime(configHours, currentHour) {
-  if (configHours === null || configHours === undefined || configHours === '') {
+function isConfigMatch(configValues, currentValue) {
+  if (!configValues || configValues.length === 0) {
     return true;
   }
 
-  if (typeof configHours === 'number') {
-    return configHours === currentHour;
-  }
-
-  if (Array.isArray(configHours)) {
-    return configHours.indexOf(currentHour) !== -1;
-  }
-
-  if (typeof configHours === 'string') {
-    const hours = configHours.split(',').map(h => parseInt(h.trim(), 10));
-    return hours.indexOf(currentHour) !== -1;
+  if (Array.isArray(configValues)) {
+    return configValues.indexOf(currentValue) !== -1;
   }
 
   return false;

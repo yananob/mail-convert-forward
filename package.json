@@ -1,0 +1,22 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "Gmailで受信したテキスト形式のメールマガジンをHTML形式に変換し、Blogger（ブログサービス）へ転送するためのGoogle Apps Script (GAS) です。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests defined\" && exit 0",
+    "lint": "echo \"No lint defined\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yananob/mail-convert-forward.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yananob/mail-convert-forward/issues"
+  },
+  "homepage": "https://github.com/yananob/mail-convert-forward#readme"
+}
