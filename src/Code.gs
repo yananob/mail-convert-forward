@@ -37,9 +37,13 @@ function main() {
     console.log('--- DRY RUN モードで実行中 (転送・既読化は行われません) ---');
   }
 
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const currentHour = today.getHours();
+  const now = new Date();
+  // 日本標準時 (JST) で現在の日時を取得
+  const dayOfWeek = parseInt(Utilities.formatDate(now, 'Asia/Tokyo', 'u')) % 7; // 0:日曜, 1:月曜, ..., 6:土曜
+  const currentHour = parseInt(Utilities.formatDate(now, 'Asia/Tokyo', 'H')); // 0-23
+  const formattedTime = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+
+  console.log(`現在の日本時間: ${formattedTime} (曜日番号: ${dayOfWeek}, 時間: ${currentHour})`);
 
   // MAIL_MAGS_CONFIG に基づく処理
   MAIL_MAGS_CONFIG.forEach(config => {
