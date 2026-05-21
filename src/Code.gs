@@ -136,32 +136,32 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
     const subject = message.getSubject();
     console.log('メッセージを処理中: ' + subject);
 
+    let body = '';
+    let isHtml = false;
+
     if (shouldConvertHtml) {
-      let htmlBody = '';
+      isHtml = true;
       if (message.getBody() !== message.getPlainBody()) {
         // すでにHTML形式の場合はそのまま使用
         console.log('HTML形式の本文をそのまま使用します。');
-        htmlBody = message.getBody();
+        body = message.getBody();
       } else {
         // テキスト形式の場合はHTMLに変換
         console.log('プレーンテキスト形式の本文をHTMLに変換します。');
         const plainText = message.getPlainBody();
-        htmlBody = convertTextToHtml(plainText);
-      }
-
-      if (isDryRun) {
-        console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
-      } else {
-        transferToBlogger(subject, htmlBody, bloggerAddress);
+        body = convertTextToHtml(plainText);
       }
     } else {
-      // そのまま転送
-      if (isDryRun) {
-        console.log('[DRY RUN] メッセージを転送しません: ' + subject);
-      } else {
-        console.log('メッセージをそのまま転送します。');
-        message.forward(bloggerAddress);
-      }
+      // テキスト形式のまま転送
+      console.log('プレーンテキスト形式のまま転送します。');
+      body = message.getPlainBody();
+      isHtml = false;
+    }
+
+    if (isDryRun) {
+      console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
+    } else {
+      transferToBlogger(subject, body, bloggerAddress, isHtml);
     }
 
     // メッセージを既読にする
@@ -205,14 +205,19 @@ function convertTextToHtml(plainText) {
  * 変換したメールをBloggerに転送します。
  *
  * @param {string} subject 件名
- * @param {string} htmlBody HTML本文
+ * @param {string} body 本文（HTMLまたはテキスト）
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
+ * @param {boolean} isHtml HTML形式かどうか
  */
-function transferToBlogger(subject, htmlBody, bloggerAddress) {
-  console.log('Bloggerへ転送中: ' + subject + ' (宛先: ' + bloggerAddress + ')');
-  GmailApp.sendEmail(bloggerAddress, subject, '', {
-    htmlBody: htmlBody
-  });
+function transferToBlogger(subject, body, bloggerAddress, isHtml) {
+  console.log('Bloggerへ転送中: ' + subject + ' (宛先: ' + bloggerAddress + ', HTML: ' + isHtml + ')');
+  if (isHtml) {
+    GmailApp.sendEmail(bloggerAddress, subject, '', {
+      htmlBody: body
+    });
+  } else {
+    GmailApp.sendEmail(bloggerAddress, subject, body);
+  }
 }
 
 /**
