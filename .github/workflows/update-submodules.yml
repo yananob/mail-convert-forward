@@ -1,0 +1,15 @@
+name: Update Submodule
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch: # 手動実行用
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    uses: yananob/myapps-common/.github/workflows/update-submodules.yml@main
+    secrets:
+      GH_PAT: ${{ secrets.GH_PAT }}
