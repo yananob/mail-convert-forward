@@ -2,7 +2,7 @@ name: Update Submodule
 
 on:
   schedule:
-    - cron: '0 23 * * 1'
+    - cron: '0 23 * * 5'
   workflow_dispatch: # 手動実行用
 
 permissions:
