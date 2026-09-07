@@ -74,17 +74,7 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
       break;
     }
 
-    // 子ラベルを持っているかチェック
-    // Gmailの階層ラベルは "親/子" 形式。
-    // また、ユーザーの設定で "mailmag-NikkeiBP" のような形式も子として扱う可能性があるため
-    // スラッシュまたはハイフンが続く場合に子ラベルと判定する
-    const labels = thread.getLabels();
-    const hasSubLabel = labels.some(l => {
-      const name = l.getName();
-      return name.startsWith(labelName + '/') || name.startsWith(labelName + '-');
-    });
-
-    if (hasSubLabel) {
+    if (hasSubLabel(thread, labelName)) {
       console.log(`スレッド (ID: ${thread.getId()}) は子ラベルを持っているため、親ラベル "${labelName}" の処理としてはスキップします。`);
       continue;
     }
@@ -96,6 +86,23 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
       console.error(`スレッドの処理中にエラーが発生しました (Thread ID: ${thread.getId()}, Label: ${labelName}): ${e.message}`);
     }
   }
+}
+
+/**
+ * スレッドが指定された親ラベルの子ラベル（サブラベル）を持っているかを判定します。
+ * Gmailの階層ラベル "親/子" 形式、または "親-子" 形式を子ラベルとして扱います。
+ *
+ * @param {GoogleAppsScript.Gmail.GmailThread} thread 判定対象のスレッド
+ * @param {string} parentLabelName 親ラベル名
+ * @returns {boolean} 子ラベルを持っている場合は true
+ */
+function hasSubLabel(thread, parentLabelName) {
+  const prefixSlash = parentLabelName + '/';
+  const prefixHyphen = parentLabelName + '-';
+  return thread.getLabels().some(l => {
+    const name = l.getName();
+    return name.startsWith(prefixSlash) || name.startsWith(prefixHyphen);
+  });
 }
 
 /**
@@ -134,30 +141,25 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
     }
 
     const subject = message.getSubject();
-    console.log('メッセージを処理中: ' + subject);
+    console.log(`メッセージを処理中: ${subject}`);
 
     if (shouldConvertHtml) {
-      let htmlBody = '';
-      if (message.getBody() !== message.getPlainBody()) {
-        // すでにHTML形式の場合はそのまま使用
+      const isAlreadyHtml = message.getBody() !== message.getPlainBody();
+      if (isAlreadyHtml) {
         console.log('HTML形式の本文をそのまま使用します。');
-        htmlBody = message.getBody();
       } else {
-        // テキスト形式の場合はHTMLに変換
         console.log('プレーンテキスト形式の本文をHTMLに変換します。');
-        const plainText = message.getPlainBody();
-        htmlBody = convertTextToHtml(plainText);
       }
+      const htmlBody = isAlreadyHtml ? message.getBody() : convertTextToHtml(message.getPlainBody());
 
       if (isDryRun) {
-        console.log('[DRY RUN] Bloggerへ転送しません: ' + subject);
+        console.log(`[DRY RUN] Bloggerへ転送しません: ${subject}`);
       } else {
         transferToBlogger(subject, htmlBody, bloggerAddress);
       }
     } else {
-      // そのまま転送
       if (isDryRun) {
-        console.log('[DRY RUN] メッセージを転送しません: ' + subject);
+        console.log(`[DRY RUN] メッセージを転送しません: ${subject}`);
       } else {
         console.log('メッセージをそのまま転送します。');
         message.forward(bloggerAddress);
@@ -166,7 +168,7 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
 
     // メッセージを既読にする
     if (isDryRun) {
-      console.log('[DRY RUN] メッセージを既読にしません: ' + subject);
+      console.log(`[DRY RUN] メッセージを既読にしません: ${subject}`);
     } else {
       message.markRead();
       console.log('処理完了: メッセージを既読にしました。');
@@ -181,13 +183,15 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
  * @returns {string} 変換後のHTML
  */
 function convertTextToHtml(plainText) {
-  // 1. HTML特殊文字をエスケープ
-  let html = plainText
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  // 1. HTML特殊文字を一括でエスケープ
+  const escapeMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  };
+  let html = plainText.replace(/[&<>"']/g, match => escapeMap[match]);
 
   // 2. 改行コードを <br> に置換
   html = html.replace(/\r?\n/g, '<br>');
@@ -209,7 +213,7 @@ function convertTextToHtml(plainText) {
  * @param {string} bloggerAddress Bloggerの投稿用メールアドレス
  */
 function transferToBlogger(subject, htmlBody, bloggerAddress) {
-  console.log('Bloggerへ転送中: ' + subject + ' (宛先: ' + bloggerAddress + ')');
+  console.log(`Bloggerへ転送中: ${subject} (宛先: ${bloggerAddress})`);
   GmailApp.sendEmail(bloggerAddress, subject, '', {
     htmlBody: htmlBody
   });
@@ -228,7 +232,7 @@ function isConfigMatch(configValues, currentValue) {
   }
 
   if (Array.isArray(configValues)) {
-    return configValues.indexOf(currentValue) !== -1;
+    return configValues.includes(currentValue);
   }
 
   return false;
