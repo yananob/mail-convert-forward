@@ -1,3 +1,6 @@
 [submodule "_myapps-common"]
 	path = _myapps-common
 	url = git@github.com:yananob/myapps-common
+	branch = main
+[submodule "_template"]
+	branch = test
