@@ -4,7 +4,7 @@
   "description": "Gmailで受信したテキスト形式のメールマガジンをHTML形式に変換し、Blogger（ブログサービス）へ転送するためのGoogle Apps Script (GAS) です。",
   "main": "src/Code.gs",
   "scripts": {
-    "test": "node -e \"const fs=require('fs'), vm=require('vm'); const code=fs.readFileSync('src/Code.gs','utf8'); const dummy={PropertiesService:{getScriptProperties:()=>({getProperties:()=>({})})},GmailApp:{search:()=>[]},console,Date,Math,Array}; vm.createContext(dummy); vm.runInContext(code,dummy); console.log('Syntax check passed.');\"",
+    "test": "node -e \"const fs=require('fs'), vm=require('vm'); const code=fs.readFileSync('src/Code.gs','utf8'); const dummy={PropertiesService:{getScriptProperties:()=>({getProperties:()=>({})})},GmailApp:{search:()=>[]},console,Date,Math,Array}; vm.createContext(dummy); vm.runInContext(code,dummy); console.log('Syntax check passed.');\" && node tests/test_code.js",
     "lint": "echo \"No lint defined\" && exit 0"
   },
   "repository": {

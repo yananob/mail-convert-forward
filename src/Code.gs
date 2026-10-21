@@ -20,6 +20,17 @@ const MAIL_MAGS_CONFIG = [
 ];
 
 /**
+ * HTML特殊文字エスケープ用マップ
+ */
+const ESCAPE_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#039;',
+};
+
+/**
  * メインのエントリーポイント。
  * トリガーによって定期実行されることを想定しています。
  */
@@ -28,7 +39,7 @@ function main() {
   const bloggerAddress = properties.BLOGGER_ADDRESS;
   const isDryRun = properties.DRY_RUN === 'true';
 
-  if (!bloggerAddress) {
+  if (!bloggerAddress || !bloggerAddress.trim()) {
     console.error('スクリプトプロパティが設定されていません。BLOGGER_ADDRESS を確認してください。');
     return;
   }
@@ -97,9 +108,16 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
  * @returns {boolean} 子ラベルを持っている場合は true
  */
 function hasSubLabel(thread, parentLabelName) {
+  if (!thread || !parentLabelName) {
+    return false;
+  }
   const prefixSlash = parentLabelName + '/';
   const prefixHyphen = parentLabelName + '-';
-  return thread.getLabels().some(l => {
+  const labels = thread.getLabels();
+  if (!Array.isArray(labels)) {
+    return false;
+  }
+  return labels.some(l => {
     const name = l.getName();
     return name.startsWith(prefixSlash) || name.startsWith(prefixHyphen);
   });
@@ -113,10 +131,11 @@ function hasSubLabel(thread, parentLabelName) {
  * @returns {GoogleAppsScript.Gmail.GmailThread[]} 取得したスレッドの配列
  */
 function fetchTargetThreads(targetLabelName) {
-  // ラベル名にスペースが含まれる場合を考慮し、ダブルクォーテーションで囲む
+  // ラベル名に含まれるエスケープ文字（二重引用符・バックスラッシュなど）をエスケープ
+  const sanitizedLabel = (targetLabelName || '').replace(/["\\]/g, '\\$&');
   // 未読 (is:unread) かつ 1日以内 (after:<timestamp>) のものを対象とする
   const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
-  const searchQuery = `label:"${targetLabelName}" is:unread after:${oneDayAgo}`;
+  const searchQuery = `label:"${sanitizedLabel}" is:unread after:${oneDayAgo}`;
   console.log(`検索クエリ: ${searchQuery}`);
   // 実行時間制限を考慮し、一度に処理する件数を制限（10件）
   // 後のフィルタリング処理で子ラベルが付いているスレッドを除外するため、少し多めに取得します
@@ -140,16 +159,12 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
       return;
     }
 
-    const subject = message.getSubject();
+    const subject = message.getSubject() || '(件名なし)';
     console.log(`メッセージを処理中: ${subject}`);
 
     if (shouldConvertHtml) {
       const isAlreadyHtml = message.getBody() !== message.getPlainBody();
-      if (isAlreadyHtml) {
-        console.log('HTML形式の本文をそのまま使用します。');
-      } else {
-        console.log('プレーンテキスト形式の本文をHTMLに変換します。');
-      }
+      console.log(isAlreadyHtml ? 'HTML形式の本文をそのまま使用します。' : 'プレーンテキスト形式の本文をHTMLに変換します。');
       const htmlBody = isAlreadyHtml ? message.getBody() : convertTextToHtml(message.getPlainBody());
 
       if (isDryRun) {
@@ -183,15 +198,12 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
  * @returns {string} 変換後のHTML
  */
 function convertTextToHtml(plainText) {
+  if (typeof plainText !== 'string' || !plainText) {
+    return '<div></div>';
+  }
+
   // 1. HTML特殊文字を一括でエスケープ
-  const escapeMap = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-  };
-  let html = plainText.replace(/[&<>"']/g, match => escapeMap[match]);
+  let html = plainText.replace(/[&<>"']/g, match => ESCAPE_MAP[match]);
 
   // 2. 改行コードを <br> に置換
   html = html.replace(/\r?\n/g, '<br>');
@@ -227,13 +239,8 @@ function transferToBlogger(subject, htmlBody, bloggerAddress) {
  * @returns {boolean} 実行対象であれば true
  */
 function isConfigMatch(configValues, currentValue) {
-  if (!configValues || configValues.length === 0) {
+  if (!configValues || !Array.isArray(configValues) || configValues.length === 0) {
     return true;
   }
-
-  if (Array.isArray(configValues)) {
-    return configValues.includes(currentValue);
-  }
-
-  return false;
+  return configValues.includes(currentValue);
 }
