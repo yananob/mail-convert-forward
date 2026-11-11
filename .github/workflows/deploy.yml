@@ -33,3 +33,8 @@ jobs:
       - name: Deploy
         run: clasp push -f
         # working-directory: src
+
+
+  create-tag:
+    needs: [deploy]
+    uses: yananob/myapps-common/.github/workflows/create-release-tag.yml@main
