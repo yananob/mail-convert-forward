@@ -109,4 +109,88 @@ assert.ok(lastQuery.includes('label:"label\\"with\\"quotes"'), 'fetchTargetThrea
 sandbox.main();
 assert.ok(mockSendEmailCalls.length > 0, 'main should call transferToBlogger via GmailApp.sendEmail');
 
+// 6. getCurrentJstDateTime のテスト
+// 6-1. 非GAS環境（フォールバック）のテスト
+const testDate = new Date(2025, 0, 1, 15, 30); // 2025-01-01 15:30 (水曜日)
+const jstResultFallback = sandbox.getCurrentJstDateTime(testDate);
+assert.strictEqual(jstResultFallback.dayOfWeek, testDate.getDay(), 'getCurrentJstDateTime fallback should match Date.getDay()');
+assert.strictEqual(jstResultFallback.currentHour, testDate.getHours(), 'getCurrentJstDateTime fallback should match Date.getHours()');
+
+// 6-2. GAS環境（Utilities.formatDate が存在する場合）のテスト
+const dummySandboxWithUtilities = Object.assign({}, sandbox, {
+  Utilities: {
+    formatDate: (date, tz, format) => {
+      assert.strictEqual(tz, 'Asia/Tokyo', 'formatDate timezone should be Asia/Tokyo');
+      if (format === 'u') return '7'; // 日曜日
+      if (format === 'H') return '9'; // 9時
+      return '';
+    }
+  }
+});
+vm.createContext(dummySandboxWithUtilities);
+vm.runInContext(code, dummySandboxWithUtilities);
+const jstResultGas = dummySandboxWithUtilities.getCurrentJstDateTime(new Date());
+assert.strictEqual(jstResultGas.dayOfWeek, 0, 'Sunday (u=7) should map to 0');
+assert.strictEqual(jstResultGas.currentHour, 9, 'Hour should map to 9');
+
+// 7. hasSubLabel のエッジケーステスト
+assert.strictEqual(sandbox.hasSubLabel(undefined, 'mailmag'), false, 'hasSubLabel(undefined) should return false');
+assert.strictEqual(sandbox.hasSubLabel({}, 'mailmag'), false, 'hasSubLabel({}) without getLabels should return false');
+assert.strictEqual(sandbox.hasSubLabel({ getLabels: () => null }, 'mailmag'), false, 'hasSubLabel with null labels should return false');
+assert.strictEqual(sandbox.hasSubLabel({ getLabels: () => [null, {}] }, 'mailmag'), false, 'hasSubLabel with invalid label objects should return false');
+
+// 8. processThread の例外局所化テスト（1通目が失敗しても全体がクラッシュせず2通目や以降が継続すること）
+const errorLogs = [];
+const loggedSandbox = Object.assign({}, sandbox, {
+  console: {
+    log: () => {},
+    error: (msg) => { errorLogs.push(msg); }
+  }
+});
+vm.createContext(loggedSandbox);
+vm.runInContext(code, loggedSandbox);
+
+const failingThread = {
+  getMessages: () => [
+    {
+      isUnread: () => true,
+      getSubject: () => 'エラーメッセージ',
+      getBody: () => { throw new Error('Body read error'); },
+      getPlainBody: () => '',
+      markRead: () => {}
+    },
+    {
+      isUnread: () => true,
+      getSubject: () => '正常メッセージ',
+      getBody: () => '本文',
+      getPlainBody: () => '本文',
+      markRead: () => {}
+    }
+  ]
+};
+// 実行してエラーがキャッチされ、プロセスが中断しないことを確認
+assert.doesNotThrow(() => {
+  loggedSandbox.processThread(failingThread, 'blogger@example.com', true, false);
+}, 'processThread should catch errors per message');
+assert.ok(errorLogs.length > 0, 'processThread should log error for failing message');
+
+// 9. DRY RUN モード時の検証テスト
+const dryRunMessages = [];
+const dryRunMarkRead = [];
+const dryRunThread = {
+  getMessages: () => [
+    {
+      isUnread: () => true,
+      getSubject: () => 'ドライランテスト',
+      getBody: () => '本文',
+      getPlainBody: () => '本文',
+      markRead: () => { dryRunMarkRead.push(true); }
+    }
+  ]
+};
+const initialSendCount = mockSendEmailCalls.length;
+sandbox.processThread(dryRunThread, 'blogger@example.com', true, true);
+assert.strictEqual(mockSendEmailCalls.length, initialSendCount, 'DRY RUN should not call GmailApp.sendEmail');
+assert.strictEqual(dryRunMarkRead.length, 0, 'DRY RUN should not call message.markRead()');
+
 console.log('All unit tests passed successfully!');

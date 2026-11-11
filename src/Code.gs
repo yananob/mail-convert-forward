@@ -31,6 +31,13 @@ const ESCAPE_MAP = {
 };
 
 /**
+ * 処理制御用定数
+ */
+const MAX_FETCH_THREADS = 10;
+const MAX_THREADS_PER_RUN = 1;
+const ONE_DAY_IN_MILLIS = 24 * 60 * 60 * 1000;
+
+/**
  * メインのエントリーポイント。
  * トリガーによって定期実行されることを想定しています。
  */
@@ -48,9 +55,7 @@ function main() {
     console.log('--- DRY RUN モードで実行中 (転送・既読化は行われません) ---');
   }
 
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const currentHour = today.getHours();
+  const { dayOfWeek, currentHour } = getCurrentJstDateTime(new Date());
 
   // MAIL_MAGS_CONFIG に基づく処理
   MAIL_MAGS_CONFIG.forEach(config => {
@@ -81,7 +86,7 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
 
   let processedCount = 0;
   for (const thread of threads) {
-    if (processedCount >= 1) {
+    if (processedCount >= MAX_THREADS_PER_RUN) {
       break;
     }
 
@@ -108,7 +113,7 @@ function processLabel(labelName, shouldConvertHtml, bloggerAddress, isDryRun) {
  * @returns {boolean} 子ラベルを持っている場合は true
  */
 function hasSubLabel(thread, parentLabelName) {
-  if (!thread || !parentLabelName) {
+  if (!thread || !parentLabelName || typeof thread.getLabels !== 'function') {
     return false;
   }
   const prefixSlash = parentLabelName + '/';
@@ -118,8 +123,11 @@ function hasSubLabel(thread, parentLabelName) {
     return false;
   }
   return labels.some(l => {
+    if (!l || typeof l.getName !== 'function') {
+      return false;
+    }
     const name = l.getName();
-    return name.startsWith(prefixSlash) || name.startsWith(prefixHyphen);
+    return typeof name === 'string' && (name.startsWith(prefixSlash) || name.startsWith(prefixHyphen));
   });
 }
 
@@ -134,12 +142,12 @@ function fetchTargetThreads(targetLabelName) {
   // ラベル名に含まれるエスケープ文字（二重引用符・バックスラッシュなど）をエスケープ
   const sanitizedLabel = (targetLabelName || '').replace(/["\\]/g, '\\$&');
   // 未読 (is:unread) かつ 1日以内 (after:<timestamp>) のものを対象とする
-  const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+  const oneDayAgo = Math.floor((Date.now() - ONE_DAY_IN_MILLIS) / 1000);
   const searchQuery = `label:"${sanitizedLabel}" is:unread after:${oneDayAgo}`;
   console.log(`検索クエリ: ${searchQuery}`);
-  // 実行時間制限を考慮し、一度に処理する件数を制限（10件）
+  // 実行時間制限を考慮し、一度に処理する件数を制限
   // 後のフィルタリング処理で子ラベルが付いているスレッドを除外するため、少し多めに取得します
-  return GmailApp.search(searchQuery, 0, 10);
+  return GmailApp.search(searchQuery, 0, MAX_FETCH_THREADS);
 }
 
 /**
@@ -151,42 +159,55 @@ function fetchTargetThreads(targetLabelName) {
  * @param {boolean} isDryRun Dry Runモードかどうか
  */
 function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
+  if (!thread || typeof thread.getMessages !== 'function') {
+    return;
+  }
   const messages = thread.getMessages();
+  if (!Array.isArray(messages)) {
+    return;
+  }
 
   messages.forEach(message => {
-    // 未読メッセージのみ処理
-    if (!message.isUnread()) {
+    if (!message || typeof message.isUnread !== 'function' || !message.isUnread()) {
       return;
     }
 
-    const subject = message.getSubject() || '(件名なし)';
+    const subject = (typeof message.getSubject === 'function' ? message.getSubject() : '') || '(件名なし)';
     console.log(`メッセージを処理中: ${subject}`);
 
-    if (shouldConvertHtml) {
-      const isAlreadyHtml = message.getBody() !== message.getPlainBody();
-      console.log(isAlreadyHtml ? 'HTML形式の本文をそのまま使用します。' : 'プレーンテキスト形式の本文をHTMLに変換します。');
-      const htmlBody = isAlreadyHtml ? message.getBody() : convertTextToHtml(message.getPlainBody());
+    try {
+      if (shouldConvertHtml) {
+        const body = typeof message.getBody === 'function' ? message.getBody() : '';
+        const plainBody = typeof message.getPlainBody === 'function' ? message.getPlainBody() : '';
+        const isAlreadyHtml = body !== plainBody;
+        console.log(isAlreadyHtml ? 'HTML形式の本文をそのまま使用します。' : 'プレーンテキスト形式の本文をHTMLに変換します。');
+        const htmlBody = isAlreadyHtml ? body : convertTextToHtml(plainBody);
 
-      if (isDryRun) {
-        console.log(`[DRY RUN] Bloggerへ転送しません: ${subject}`);
+        if (isDryRun) {
+          console.log(`[DRY RUN] Bloggerへ転送しません: ${subject}`);
+        } else {
+          transferToBlogger(subject, htmlBody, bloggerAddress);
+        }
       } else {
-        transferToBlogger(subject, htmlBody, bloggerAddress);
+        if (isDryRun) {
+          console.log(`[DRY RUN] メッセージを転送しません: ${subject}`);
+        } else {
+          console.log('メッセージをそのまま転送します。');
+          message.forward(bloggerAddress);
+        }
       }
-    } else {
-      if (isDryRun) {
-        console.log(`[DRY RUN] メッセージを転送しません: ${subject}`);
-      } else {
-        console.log('メッセージをそのまま転送します。');
-        message.forward(bloggerAddress);
-      }
-    }
 
-    // メッセージを既読にする
-    if (isDryRun) {
-      console.log(`[DRY RUN] メッセージを既読にしません: ${subject}`);
-    } else {
-      message.markRead();
-      console.log('処理完了: メッセージを既読にしました。');
+      // メッセージを既読にする
+      if (isDryRun) {
+        console.log(`[DRY RUN] メッセージを既読にしません: ${subject}`);
+      } else {
+        if (typeof message.markRead === 'function') {
+          message.markRead();
+        }
+        console.log('処理完了: メッセージを既読にしました。');
+      }
+    } catch (msgError) {
+      console.error(`メッセージの処理中にエラーが発生しました (件名: ${subject}): ${msgError.message}`);
     }
   });
 }
@@ -229,6 +250,32 @@ function transferToBlogger(subject, htmlBody, bloggerAddress) {
   GmailApp.sendEmail(bloggerAddress, subject, '', {
     htmlBody: htmlBody
   });
+}
+
+/**
+ * 指定した日時の日本時間（JST, Asia/Tokyo）での曜日（0:日曜〜6:土曜）と時間（0〜23）を取得します。
+ * GAS環境では Utilities.formatDate を使用して正確なJSTを取得し、非GAS環境ではローカルタイムにフォールバックします。
+ *
+ * @param {Date} [date=new Date()] 対象日時
+ * @returns {{ dayOfWeek: number, currentHour: number }} JSTでの曜日および時間
+ */
+function getCurrentJstDateTime(date) {
+  const targetDate = date instanceof Date ? date : new Date();
+
+  if (typeof Utilities !== 'undefined' && typeof Utilities.formatDate === 'function') {
+    // u: 1(月)〜7(日), H: 0〜23
+    const dayStr = Utilities.formatDate(targetDate, 'Asia/Tokyo', 'u');
+    const hourStr = Utilities.formatDate(targetDate, 'Asia/Tokyo', 'H');
+    // JSのDate.getDay()は 0(日)〜6(土) なので、u形式(1:月〜7:日)を 0〜6 に変換 (7 -> 0)
+    const dayOfWeek = Number(dayStr) % 7;
+    const currentHour = Number(hourStr);
+    return { dayOfWeek, currentHour };
+  }
+
+  return {
+    dayOfWeek: targetDate.getDay(),
+    currentHour: targetDate.getHours(),
+  };
 }
 
 /**
