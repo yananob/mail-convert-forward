@@ -9,6 +9,9 @@ concurrency:
   group: mail-convert-forward-deploy
   cancel-in-progress: true
 
+permissions:
+  contents: write
+  
 jobs:
   deploy:
     runs-on: ubuntu-latest
