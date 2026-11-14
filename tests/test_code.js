@@ -78,6 +78,15 @@ const rawText = 'Hello & <World>\nVisit https://example.com for info.';
 const expectedHtml = '<div>Hello &amp; &lt;World&gt;<br>Visit <a href="https://example.com">https://example.com</a> for info.</div>';
 assert.strictEqual(sandbox.convertTextToHtml(rawText), expectedHtml, 'convertTextToHtml should escape HTML, preserve newlines, and linkify URLs');
 
+// 1-1. HTML本文の目次と見出しアンカーのテスト
+const htmlWithHeadings = '<html><body><h1>概要</h1><h2 id="old-id">詳細 <em>情報</em></h2></body></html>';
+assert.strictEqual(
+  sandbox.addTableOfContents(htmlWithHeadings),
+  '<html><body><nav aria-label="目次"><strong>目次</strong><ol><li><a href="#section-1">概要</a></li><li><a href="#section-2">詳細 情報</a></li></ol></nav><h1 id="section-1">概要</h1><h2 id="section-2">詳細 <em>情報</em></h2></body></html>',
+  'addTableOfContents should add unique heading anchors and insert a table of contents inside body'
+);
+assert.strictEqual(sandbox.addTableOfContents('<p>見出しなし</p>'), '<p>見出しなし</p>', 'addTableOfContents should not modify HTML without headings');
+
 // 2. isConfigMatch のテスト
 assert.strictEqual(sandbox.isConfigMatch([], 1), true, 'isConfigMatch with empty array should match any day/hour');
 assert.strictEqual(sandbox.isConfigMatch(null, 1), true, 'isConfigMatch with null should match any day/hour');
@@ -108,6 +117,19 @@ assert.ok(lastQuery.includes('label:"label\\"with\\"quotes"'), 'fetchTargetThrea
 // 5. main の実行テスト（正常系）
 sandbox.main();
 assert.ok(mockSendEmailCalls.length > 0, 'main should call transferToBlogger via GmailApp.sendEmail');
+
+const htmlMessage = {
+  isUnread: () => true,
+  getSubject: () => 'HTMLメール',
+  getBody: () => '<h1>見出し</h1>',
+  getPlainBody: () => '見出し',
+  markRead: () => {},
+};
+sandbox.processThread({ getMessages: () => [htmlMessage] }, 'blogger@example.com', true, false);
+assert.ok(
+  mockSendEmailCalls[mockSendEmailCalls.length - 1].options.htmlBody.includes('<nav aria-label="目次">'),
+  'processThread should add a table of contents to already-HTML messages'
+);
 
 // 6. getCurrentJstDateTime のテスト
 // 6-1. 非GAS環境（フォールバック）のテスト

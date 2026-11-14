@@ -181,7 +181,7 @@ function processThread(thread, bloggerAddress, shouldConvertHtml, isDryRun) {
         const plainBody = typeof message.getPlainBody === 'function' ? message.getPlainBody() : '';
         const isAlreadyHtml = body !== plainBody;
         console.log(isAlreadyHtml ? 'HTML形式の本文をそのまま使用します。' : 'プレーンテキスト形式の本文をHTMLに変換します。');
-        const htmlBody = isAlreadyHtml ? body : convertTextToHtml(plainBody);
+        const htmlBody = isAlreadyHtml ? addTableOfContents(body) : convertTextToHtml(plainBody);
 
         if (isDryRun) {
           console.log(`[DRY RUN] Bloggerへ転送しません: ${subject}`);
@@ -236,6 +236,39 @@ function convertTextToHtml(plainText) {
 
   // 4. 全体を <div> でラップ
   return `<div>${html}</div>`;
+}
+
+/**
+ * HTML本文の見出しにアンカーを付与し、目次を追加します。
+ *
+ * @param {string} html HTML本文
+ * @returns {string} 目次を追加したHTML本文
+ */
+function addTableOfContents(html) {
+  if (typeof html !== 'string' || !html) {
+    return html;
+  }
+
+  let headingIndex = 0;
+  const tocItems = [];
+  const content = html.replace(/<h([1-6])\b([^>]*)>([\s\S]*?)<\/h\1\s*>/gi, (match, level, attributes, headingHtml) => {
+    headingIndex++;
+    const headingId = `section-${headingIndex}`;
+    const headingText = headingHtml.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() || `見出し ${headingIndex}`;
+    const cleanedAttributes = attributes.replace(/\s+id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi, '');
+    tocItems.push(`<li><a href="#${headingId}">${headingText}</a></li>`);
+    return `<h${level}${cleanedAttributes} id="${headingId}">${headingHtml}</h${level}>`;
+  });
+
+  if (tocItems.length === 0) {
+    return html;
+  }
+
+  const toc = `<nav aria-label="目次"><strong>目次</strong><ol>${tocItems.join('')}</ol></nav>`;
+  const bodyOpenTag = /<body\b[^>]*>/i;
+  return bodyOpenTag.test(content)
+    ? content.replace(bodyOpenTag, match => `${match}${toc}`)
+    : `${toc}${content}`;
 }
 
 /**
