@@ -251,20 +251,34 @@ function addTableOfContents(html) {
 
   let headingIndex = 0;
   const tocItems = [];
+  let currentTopLevelItem = null;
   const content = html.replace(/<h([1-6])\b([^>]*)>([\s\S]*?)<\/h\1\s*>/gi, (match, level, attributes, headingHtml) => {
     headingIndex++;
     const headingId = `section-${headingIndex}`;
     const headingText = headingHtml.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() || `見出し ${headingIndex}`;
     const cleanedAttributes = attributes.replace(/\s+id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi, '');
-    tocItems.push(`<li><a href="#${headingId}">${headingText}</a></li>`);
+    if (Number(level) === 1) {
+      currentTopLevelItem = { link: `<a href="#${headingId}">${headingText}</a>`, children: [] };
+      tocItems.push(currentTopLevelItem);
+    } else if (Number(level) === 2) {
+      const item = `<li><a href="#${headingId}">${headingText}</a></li>`;
+      if (currentTopLevelItem) {
+        currentTopLevelItem.children.push(item);
+      } else {
+        tocItems.push({ link: `<a href="#${headingId}">${headingText}</a>`, children: [] });
+      }
+    }
     return `<h${level}${cleanedAttributes} id="${headingId}">${headingHtml}</h${level}>`;
   });
 
-  if (tocItems.length === 0) {
+  if (headingIndex === 0) {
     return html;
   }
+  if (tocItems.length === 0) {
+    return content;
+  }
 
-  const toc = `<nav aria-label="目次"><strong>目次</strong><ol>${tocItems.join('')}</ol></nav>`;
+  const toc = `<nav aria-label="目次"><strong>目次</strong><ol>${tocItems.map(item => `<li>${item.link}${item.children.length ? `<ol>${item.children.join('')}</ol>` : ''}</li>`).join('')}</ol></nav>`;
   const bodyOpenTag = /<body\b[^>]*>/i;
   return bodyOpenTag.test(content)
     ? content.replace(bodyOpenTag, match => `${match}${toc}`)

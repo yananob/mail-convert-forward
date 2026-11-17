@@ -79,11 +79,21 @@ const expectedHtml = '<div>Hello &amp; &lt;World&gt;<br>Visit <a href="https://e
 assert.strictEqual(sandbox.convertTextToHtml(rawText), expectedHtml, 'convertTextToHtml should escape HTML, preserve newlines, and linkify URLs');
 
 // 1-1. HTML本文の目次と見出しアンカーのテスト
-const htmlWithHeadings = '<html><body><h1>概要</h1><h2 id="old-id">詳細 <em>情報</em></h2></body></html>';
+const htmlWithHeadings = '<html><body><h1>概要</h1><h2 id="old-id">詳細 <em>情報</em></h2><h2>補足</h2><h3>詳細項目</h3></body></html>';
 assert.strictEqual(
   sandbox.addTableOfContents(htmlWithHeadings),
-  '<html><body><nav aria-label="目次"><strong>目次</strong><ol><li><a href="#section-1">概要</a></li><li><a href="#section-2">詳細 情報</a></li></ol></nav><h1 id="section-1">概要</h1><h2 id="section-2">詳細 <em>情報</em></h2></body></html>',
-  'addTableOfContents should add unique heading anchors and insert a table of contents inside body'
+  '<html><body><nav aria-label="目次"><strong>目次</strong><ol><li><a href="#section-1">概要</a><ol><li><a href="#section-2">詳細 情報</a></li><li><a href="#section-3">補足</a></li></ol></li></ol></nav><h1 id="section-1">概要</h1><h2 id="section-2">詳細 <em>情報</em></h2><h2 id="section-3">補足</h2><h3 id="section-4">詳細項目</h3></body></html>',
+  'addTableOfContents should nest second-level headings and omit deeper headings from the table of contents'
+);
+assert.strictEqual(
+  sandbox.addTableOfContents('<h2>単独の見出し</h2><h3>目次対象外</h3>'),
+  '<nav aria-label="目次"><strong>目次</strong><ol><li><a href="#section-1">単独の見出し</a></li></ol></nav><h2 id="section-1">単独の見出し</h2><h3 id="section-2">目次対象外</h3>',
+  'addTableOfContents should keep second-level headings in the table of contents when no first-level heading exists'
+);
+assert.strictEqual(
+  sandbox.addTableOfContents('<h3>目次対象外</h3>'),
+  '<h3 id="section-1">目次対象外</h3>',
+  'addTableOfContents should still add anchors without a table of contents when all headings are deeper than the second level'
 );
 assert.strictEqual(sandbox.addTableOfContents('<p>見出しなし</p>'), '<p>見出しなし</p>', 'addTableOfContents should not modify HTML without headings');
 
